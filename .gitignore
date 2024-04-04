@@ -1,0 +1,15 @@
+# specific to PyCharm
+.idea/
+*.iml
+
+# generate by Python
+*.pyc
+__pycache__/
+
+# specific to Scrapy
+.scrapy/
+.scrapy-debug.log
+
+# generate by windows
+.DS_Store
+Thumbs.db
