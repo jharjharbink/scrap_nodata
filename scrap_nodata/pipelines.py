@@ -9,6 +9,7 @@ from itemadapter import ItemAdapter
 from datetime import datetime
 
 from scrap_nodata.items import ReleaseItem
+from logger import logger
 
 
 def extract_info(all_text_elements):
@@ -19,7 +20,7 @@ def extract_info(all_text_elements):
     s3 = "Daniel Avery / Wonderland - Running [2024]"
     s4 = "Daniel Avery / Wonderland - Running"
 
-    the idea is to parse all of those string types
+    the idea is to parse all of those string types to: "Daniel Avery", "Wonderland - Running", "2024"/None
     """
 
     all_text_elements_cleaned = all_text_elements.strip()
@@ -78,33 +79,34 @@ def map_release_format(format_list):
     Sometimes, albums contains multiple tags, to describe their type of record, which are in conflict. this is all the
     combinations that I found and the priority
     """
-    if len(format_list) == 0:  # if there is no format or one format, there is no conflict.
-        return format_list
+    if len(format_list) == 0:  # if there is no format, there is no conflict.
+        return None
     elif len(format_list) == 1:
-        return format_list[0]
-    elif format_list == ["album", "remixes"]:
+        return format_list[0]  # if there is 1 format, there is no conflict.
+    elif set(format_list) == {"album", "remixes"}:
         return "remixes"
-    elif format_list == ["ep", "remixes"]:
+    elif set(format_list) == {"ep", "remixes"}:
         return "remixes"
-    elif format_list == ["remixes", "Single"]:
+    elif set(format_list) == {"remixes", "Single"}:
         return "remixes"
-    elif format_list == ["album", "ep"]:
+    elif set(format_list) == {"album", "ep"}:
         return "ep"
-    elif format_list == ["compilation", "remixes"]:
+    elif set(format_list) == {"compilation", "remixes"}:
         return "compilation"
-    elif format_list == ["compilation", "ep"]:
+    elif set(format_list) == {"compilation", "ep"}:
         return "ep"
-    elif format_list == ["album", "compilation"]:
+    elif set(format_list) == {"album", "compilation"}:
         return "compilation"
-    elif format_list == ["ep", "remixes", "single"]:
+    elif set(format_list) == {"ep", "remixes", "single"}:
         return "remixes"
-    elif format_list == ["album", "demo"]:
+    elif set(format_list) == {"album", "demo"}:
         return "demo"
-    elif format_list == ["album", "single"]:
+    elif set(format_list) == {"album", "single"}:
         return "single"
-    elif format_list == ["ep", "single"]:
+    elif set(format_list) == {"ep", "single"}:
         return "single"
     else:
+        logger.info(f"Unable to find dominant format in this list: {format_list}")
         return None
 
 
@@ -121,36 +123,56 @@ def filter_label(label_extracted_string):
 class PostProcessingPipeline:
     def process_item(self, item, spider):
 
-        if 'artist_name_release_name_released_year' in item:
+        try:
+            if 'artist_name_release_name_released_year' in item:
                 artist_name, release_name, released_year = extract_info(item['artist_name_release_name_released_year'])
+        except:
+            logger.warning(f"unable to extract artist_name, release_name and released_year for item: {item.items()}")
 
         # Format published_date from 'Sep 08, 2023 ·' to '08/09/2023'
-        if 'published_date' in item:
-            try:
-                date_object = datetime.strptime(item['published_date'], '%b %d, %Y')
-                published_date = date_object.strftime('%d/%m/%Y')
-            except ValueError:
-                published_date = None
 
-        if 'tag_list' in item:
-            tag_list, release_type = remove_format_from_tags(item['tag_list'])
+        try:
+            if 'published_date' in item:
+                try:
+                    date_object = datetime.strptime(item['published_date'], '%b %d, %Y')
+                    published_date = date_object.strftime('%d/%m/%Y')
+                except ValueError:
+                    published_date = None
+                    logger.warning(f"unable to parse published_date from {published_date} to '%d/%m/%Y'")
+        except:
+            logger.warning(f"unable to parse published_date for item: {item.items()}")
+
+        try:
+            if 'tag_list' in item:
+                tag_list, release_type = remove_format_from_tags(item['tag_list'])
+        except:
+            logger.warning(f"unable to parse tag_list for item: {item.items()}")
 
         # Format comment_number from 'No comments' to 0
-        if 'comment_number' in item:
-            try:
-                comment_number = item['comment_number'][0]
-                if comment_number[0].isdigit():
-                    comment_number = int(comment_number.split(' ')[0])  # Extraire le nombre de commentaires
-                else:
-                    comment_number = 0  # S'il n'y a pas de commentaires, mettre 0
-            except ValueError:
-                comment_number = 0
+        try:
+            if 'comment_number' in item:
+                try:
+                    comment_number = item['comment_number'][0]
+                    if comment_number[0].isdigit():
+                        comment_number = int(comment_number.split(' ')[0])  # Extraire le nombre de commentaires
+                    else:
+                        comment_number = 0  # S'il n'y a pas de commentaires, mettre 0
+                except ValueError:
+                    comment_number = 0
+        except:
+            logger.warning(f"unable to parse comment_number for item: {item.items()}")
 
-        if 'all_songs' in item:
-            all_songs = [element.strip() for element in item['all_songs'] if element.strip()]
+        try:
+            if 'all_songs' in item:
+                all_songs = [element.strip() for element in item['all_songs'] if element.strip()]
+        except KeyError:
+            logger.info(f"all_songs unavailable for this item: {item.items()}")
 
-        if 'label_name' in item:
-            label_name = filter_label(item['label_name'])
+        try:
+            if 'label_name' in item:
+                label_name = filter_label(item['label_name'])
+        except KeyError:
+            logger.info(f"label_name unavailable for this item: {item.items()}")
 
         return ReleaseItem(
             artist_name=artist_name,
