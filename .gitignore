@@ -13,3 +13,8 @@ __pycache__/
 # generate by windows
 .DS_Store
 Thumbs.db
+
+# specific to project
+scrapy.cfg
+logs.log
+scrap_nodata/settings.py

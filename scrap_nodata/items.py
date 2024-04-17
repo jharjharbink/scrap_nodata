@@ -13,12 +13,13 @@ class ReleaseItem(Item):
     released_year = Field()
     published_date = Field()
     tag_list = Field()
-    release_type = Field()
+    format = Field()
     comment_number = Field()
-    release_image_url = Field()
-    all_songs = Field()
+    image_urls = Field()
+    all_songs_and_length = Field()
     label_name = Field()
-    album_url = Field()
+    release_url = Field()
+    images = Field()
 
 
 class ScrapingItem(Item):
@@ -26,8 +27,8 @@ class ScrapingItem(Item):
     published_date = Field()
     tag_list = Field()
     comment_number = Field()
-    release_image_url = Field()
+    image_urls = Field()
     all_songs = Field()
     label_name = Field()
-    album_url = Field()
+    release_url = Field()
 
