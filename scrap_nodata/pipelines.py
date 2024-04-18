@@ -26,7 +26,9 @@ RELEASE_FORMATS = (
     "Documentary",
     "demo",
     "dvd",
-    "mixtape"
+    "mixtape",
+    "unknown",
+    "dj mix"
 )
 
 
@@ -120,8 +122,7 @@ class PostProcessingPipeline:
         the idea is to parse all of those string types to: "Daniel Avery", "Wonderland - Running", "2024"/None
         """
 
-        all_text_elements_cleaned = all_text_elements.strip()
-        all_text_elements_cleaned.replace('\xa0', ' ')
+        all_text_elements_cleaned = all_text_elements.strip().replace('\xa0', ' ')
 
         # Extract artist_name and release_name from all_text_elements
         artist_release = all_text_elements_cleaned.split(' [')[0]
@@ -149,10 +150,9 @@ class PostProcessingPipeline:
 
     @staticmethod
     def extract_published_year(published_year_raw):
-        date_object_cleaned = published_year_raw.strip()
-        date_object_cleaned.replace('\xa0', ' ')
+        date_object_cleaned = published_year_raw.strip().replace('\xa0', ' ')
 
-        date_object_cleaned = datetime.strptime(date_object_cleaned['published_date'], '%b %d, %Y')
+        date_object_cleaned = datetime.strptime(date_object_cleaned, '%b %d, %Y')
         date_object = date_object_cleaned.strftime('%d/%m/%Y')
         return date_object
 
@@ -172,14 +172,14 @@ class PostProcessingPipeline:
         """
 
         if len(format_list) == 0:  # if there is no format, there is no conflict.
-            return None
+            return "unknown"
         elif len(format_list) == 1:
             return format_list[0]  # if there is 1 format, there is no conflict.
         elif set(format_list) == {"album", "remixes"}:
             return "remixes"
         elif set(format_list) == {"ep", "remixes"}:
             return "remixes"
-        elif set(format_list) == {"remixes", "Single"}:
+        elif set(format_list) == {"remixes", "single"}:
             return "remixes"
         elif set(format_list) == {"album", "ep"}:
             return "ep"
@@ -197,14 +197,26 @@ class PostProcessingPipeline:
             return "single"
         elif set(format_list) == {"ep", "single"}:
             return "single"
+        elif set(format_list) == {'album', 'mixtape'}:
+            return "mixtape"
         else:
-            logger.info(f"Unable to find dominant format in this list: {format_list}")
-            return None
+            logger.warning(f"Unable to find dominant format in this list: {format_list}")
+            return "unknown"
 
     @staticmethod
-    def extract_songs_anf_length(all_songs_raw):
-        all_songs_striped = [element.strip() for element in all_songs_raw if element.strip()]
-        all_songs_and_length_raw = [element.rsplit(" ", 1) for element in all_songs_striped]
+    def extract_songs_and_length(all_songs_raw):
+        all_songs_striped = [song.strip().replace('\xa0', ' ') for song in all_songs_raw if song.strip()]
+
+        all_songs_cleaned = []
+        for song in all_songs_striped:
+            if song.startswith(" – "):
+                all_songs_cleaned.append(song[3:])
+            if song.startswith("– "):
+                all_songs_cleaned.append(song[2:])
+            else:
+                all_songs_cleaned.append(song)
+
+        all_songs_and_length_raw = [song.rsplit(" ", 1) for song in all_songs_cleaned]
         all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
         return all_songs_and_length
 
@@ -255,6 +267,8 @@ class SavingItemToDB:
             self.session.close()
 
     def process_item(self, item, spider):
+
+
 
         with self.session_scope():
             release = self.create_release(item)
