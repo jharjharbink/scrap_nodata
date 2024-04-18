@@ -35,64 +35,60 @@ class PostProcessingPipeline:
 
         try:
             if 'artist_name_release_name_released_year' in item:
-                artist_name, release_name, released_year = self.extract_info(
+                artist_name, release_name, released_year = self.extract_artist_release_and_year(
                     item['artist_name_release_name_released_year'])
-        except:
-            logger.warning(f"unable to extract artist_name, release_name and released_year for item: {item.items()}")
+        except Exception as exc:
+            logger.warning(f"{exc}\nUnable to extract artist_name, release_name and released_year for item: {item.items()}")
+            artist_name = None
+            release_name = None
+            released_year = None
 
-        # Format published_date from 'Sep 08, 2023 ·' to '08/09/2023'
-
+        # Format published_date from 'Sep 08, 2023 ·' to Date(08/09/2023)
         try:
             if 'published_date' in item:
-                try:
-                    date_object = datetime.strptime(item['published_date'], '%b %d, %Y')
-                    published_date = date_object.strftime('%d/%m/%Y')
-                except ValueError:
-                    published_date = None
-                    logger.warning(f"unable to parse published_date from {published_date} to '%d/%m/%Y'")
-        except:
-            logger.warning(f"unable to parse published_date for item: {item.items()}")
+                published_date = self.extract_published_year(item["published_date"])
+
+        except Exception as exc:
+            logger.warning(f"{exc}\nUnable to parse published_date for item: {item.items()}")
+            published_date = None
 
         try:
             if 'tag_list' in item:
                 tag_list, release_type = self.remove_format_from_tags(item['tag_list'])
-        except:
-            logger.warning(f"unable to parse tag_list for item: {item.items()}")
+        except Exception as exc:
+            logger.warning(f"{exc}\nUnable to parse tag_list for item: {item.items()}")
+            tag_list = None
+            release_type = None
 
         # Format comment_number from 'No comments' to 0
         try:
             if 'comment_number' in item:
-                try:
-                    comment_number = item['comment_number'][0]
-                    if comment_number[0].isdigit():
-                        comment_number = int(comment_number.split(' ')[0])  # Extraire le nombre de commentaires
-                    else:
-                        comment_number = 0  # S'il n'y a pas de commentaires, mettre 0
-                except ValueError:
-                    comment_number = 0
-        except:
-            logger.warning(f"unable to parse comment_number for item: {item.items()}")
+                comment_number = self.extract_comment_number(item['comment_number'][0])
+
+        except Exception as exc:
+            logger.warning(f"{exc}\nUnable to parse comment_number for item: {item.items()}")
+            comment_number = None
 
         try:
             if 'all_songs' in item:
-                all_songs_striped = [element.strip() for element in item['all_songs'] if element.strip()]
-                all_songs_and_length_raw = [element.rsplit(" ", 1) for element in all_songs_striped]
-                all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
+                all_songs_and_length = self.extract_songs_and_length(item['all_songs'])
         except KeyError:
             logger.info(f"all_songs unavailable for this item: {item.items()}")
+            all_songs_and_length = []
 
         try:
             if 'label_name' in item:
                 label_name = self.filter_label(item['label_name'])
         except KeyError:
             logger.info(f"label_name unavailable for this item: {item.items()}")
+            label_name = None
 
         return ReleaseItem(
             artist_name=artist_name,
             release_name=release_name,
             released_year=released_year,
             published_date=published_date,
-                tag_list=tag_list,
+            tag_list=tag_list,
             format=release_type,
             comment_number=comment_number,
             image_urls=item['image_urls'],
@@ -113,7 +109,7 @@ class PostProcessingPipeline:
         return tags, release_type
 
     @staticmethod
-    def extract_info(all_text_elements):
+    def extract_artist_release_and_year(all_text_elements):
         """
         all_text_elements can be like :
         s1 = "Daniel Avery – Wonderland / Running [2024]"
@@ -125,6 +121,7 @@ class PostProcessingPipeline:
         """
 
         all_text_elements_cleaned = all_text_elements.strip()
+        all_text_elements_cleaned.replace('\xa0', ' ')
 
         # Extract artist_name and release_name from all_text_elements
         artist_release = all_text_elements_cleaned.split(' [')[0]
@@ -149,6 +146,23 @@ class PostProcessingPipeline:
             released_year = None
 
         return artist_name, release_name, released_year
+
+    @staticmethod
+    def extract_published_year(published_year_raw):
+        date_object_cleaned = published_year_raw.strip()
+        date_object_cleaned.replace('\xa0', ' ')
+
+        date_object_cleaned = datetime.strptime(date_object_cleaned['published_date'], '%b %d, %Y')
+        date_object = date_object_cleaned.strftime('%d/%m/%Y')
+        return date_object
+
+    @staticmethod
+    def extract_comment_number(comment_number_raw):
+        if comment_number_raw.isdigit():
+            comment_number = int(comment_number_raw.split(' ')[0])  # Extraire le nombre de commentaires
+        else:
+            comment_number = 0  # S'il n'y a pas de commentaires, mettre 0
+        return comment_number
 
     @staticmethod
     def map_release_format(format_list):
@@ -186,6 +200,13 @@ class PostProcessingPipeline:
         else:
             logger.info(f"Unable to find dominant format in this list: {format_list}")
             return None
+
+    @staticmethod
+    def extract_songs_anf_length(all_songs_raw):
+        all_songs_striped = [element.strip() for element in all_songs_raw if element.strip()]
+        all_songs_and_length_raw = [element.rsplit(" ", 1) for element in all_songs_striped]
+        all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
+        return all_songs_and_length
 
     @staticmethod
     def filter_label(label_extracted_string):
