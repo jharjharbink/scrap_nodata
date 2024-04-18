@@ -92,7 +92,7 @@ class PostProcessingPipeline:
             release_name=release_name,
             released_year=released_year,
             published_date=published_date,
-            tag_list=tag_list,
+                tag_list=tag_list,
             format=release_type,
             comment_number=comment_number,
             image_urls=item['image_urls'],
@@ -153,9 +153,10 @@ class PostProcessingPipeline:
     @staticmethod
     def map_release_format(format_list):
         """
-        Sometimes, albums contains multiple tags, to describe their type of record, which are in conflict. this is all the
-        combinations that I found and the priority
+        Sometimes, albums contains multiple tags to describe their type of record (format), which are in conflict. this are
+        all the combinations that I found and the priority associated
         """
+
         if len(format_list) == 0:  # if there is no format, there is no conflict.
             return None
         elif len(format_list) == 1:
