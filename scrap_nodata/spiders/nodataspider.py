@@ -52,7 +52,7 @@ class NodataspiderSpider(scrapy.Spider):
             tag_list = response.css('ul.meta a[rel="category tag"]::text').extract()
             comment_number = response.css('ul.meta li:last-child a::text').get()
             release_image_url = [response.css('img::attr(src)').get()]  # putting in a list for it to be proccessed by scrapy media pipeline
-            all_songs = response.css('ol li::text').extract()
+            all_songs = response.css('ol li').extract()
             label_name = response.xpath('//span[@class="aligncenter"]/following::text()').get()
 
             # logger.info(f"data collected:\n- artist_name_release_name_released_year: "
@@ -86,7 +86,7 @@ class NodataspiderSpider(scrapy.Spider):
 class DebugNodataspiderSpider(scrapy.Spider):
     name = "debug_nodataspider"
     allowed_domains = ["nodata.tv"]
-    start_urls = ["https://nodata.tv/187569"]
+    start_urls = ["https://nodata.tv/154997"]
 
     def parse(self, response):
 

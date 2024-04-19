@@ -50,16 +50,16 @@ class PostProcessingPipeline:
             release_name = ""
             released_year = 1000
 
-        # Format published_date from 'Sep 08, 2023 ·' to Date(08/09/2023)
+        # Format published_date from 'Sep 08, 2023 ·' to datetime(08/09/2023)
         try:
             if 'published_date' in item:
                 published_date = self.extract_published_year(item["published_date"])
             else:
-                published_date = None  # remplacer par Date(00/00/1000)
+                published_date = datetime(1000, 1, 1)
 
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to parse published_date for item: {item.items()}")
-            published_date = None  # remplacer par Date(00/00/1000)
+            published_date = datetime(1000, 1, 1)
 
         try:
             if 'tag_list' in item:
@@ -85,6 +85,7 @@ class PostProcessingPipeline:
 
         try:
             if 'all_songs' in item:
+
                 all_songs_and_length = self.extract_songs_and_length(item['all_songs'], comment_number)
             else:
                 all_songs_and_length = []
@@ -136,11 +137,15 @@ class PostProcessingPipeline:
         s2 = "Daniel Avery – Wonderland / Running"
         s3 = "Daniel Avery / Wonderland - Running [2024]"
         s4 = "Daniel Avery / Wonderland - Running"
+        s5 = "Daniel Avery / Other Artist - Wonderland / Running [2024]"
+        s5 = "Daniel Avery / Other Artist - Wonderland / Running"
+
 
         the idea is to parse all of those string types to: "Daniel Avery", "Wonderland - Running", "2024"/None
         """
 
-        all_text_elements_cleaned = all_text_elements.strip().replace('\xa0', ' ').replace('\u200e', ' ')
+        all_text_elements_cleaned = (all_text_elements.strip().replace('\xa0', ' ')
+                                     .replace('\u200e', ' ').replace("&amp;", "&"))
 
         # Extract artist_name and release_name from all_text_elements
         artist_release = all_text_elements_cleaned.rsplit(' [', 1)[0]
@@ -164,12 +169,14 @@ class PostProcessingPipeline:
                 separator = ' – '
 
         artist_name, release_name = artist_release.rsplit(separator, 1)
+        artist_name = artist_name.strip()
+        release_name = release_name.strip()
 
         # Extract released_year from all_text_elements_cleaned
         if all_text_elements_cleaned[-7:-5] == ' [' and all_text_elements_cleaned[-1] == ']':
             released_year = int(all_text_elements_cleaned[-5:-1])
         else:
-            released_year = None
+            released_year = 1000
 
         return artist_name, release_name, released_year
 
@@ -184,9 +191,9 @@ class PostProcessingPipeline:
     @staticmethod
     def extract_comment_number(comment_number_raw):
         if comment_number_raw.isdigit():
-            comment_number = int(comment_number_raw.split(' ')[0])  # Extraire le nombre de commentaires
+            comment_number = int(comment_number_raw.split(' ')[0])
         else:
-            comment_number = 0  # S'il n'y a pas de commentaires, mettre 0
+            comment_number = 0
         return comment_number
 
     @staticmethod
@@ -231,8 +238,11 @@ class PostProcessingPipeline:
     @staticmethod
     def extract_songs_and_length(all_songs_raw, comment_number):
 
-        if comment_number > -1:
+        # removing comments which are also stored in ol li html tags
+        if comment_number > 0:
             del all_songs_raw[-comment_number:]
+        elif comment_number == 0:
+            pass
         else:
             raise ValueError
 
@@ -241,13 +251,22 @@ class PostProcessingPipeline:
 
         # some character replacement
         all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ').replace("&amp;", "&")
+                             .replace("<strong>", "").replace("</strong>", "")
                              for song in all_songs_without_html_li_tag if song.strip()]
 
         # build list of tuples containing song name and length. such as [(song_name, song_length), ...]
-        all_songs_and_length_raw = [song.rsplit(" ", 1) for song in all_songs_striped]
-        all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
+        all_songs_and_length = []
+        for song in all_songs_striped:
+            if song.endswith(")") and song[-7] == "(":
+                if " " in song:
+                    song_and_length = song.rsplit(" ", 1)
+                    all_songs_and_length.append((song_and_length[0], song_and_length[1][1:-1]))
+                else:
+                    all_songs_and_length.append((song, "unknown_duration"))
+            else:
+                all_songs_and_length.append((song, "unknown_duration"))
 
-        # in some case, song name is encapsulate in several strong tags. Here, removing theme
+        # in some case, song name are encapsulate in strong tags. Here, removing theme
         all_songs_and_length_untaged = []
         for song in all_songs_and_length:
             if song[0].startswith("<strong>"):
@@ -262,9 +281,11 @@ class PostProcessingPipeline:
             if song[0].startswith(" – "):
                 if len(song[0]) > 3:
                     all_songs_and_length_cleaned.append((song[0][3:], song[1]))
+
             elif song[0].startswith("– "):
                 if len(song[0]) > 2:
                     all_songs_and_length_cleaned.append((song[0][2:], song[1]))
+
             else:
                 all_songs_and_length_cleaned.append((song[0], song[1]))
 
@@ -303,7 +324,7 @@ class SavingItemToDB:
             self.session.close()
 
     @contextmanager
-    def session_scope(self):
+    def session_scope(self, item):
         """
         Provide a transactional scope around a series of operations.
         """
@@ -312,13 +333,13 @@ class SavingItemToDB:
             self.session.commit()
         except Exception as exc:
             self.session.rollback()
-            logger.error(f"error occured during commit:\n{exc}")
+            logger.error(f"error occured during commit with item:\n{item}\n\n{exc}")
         finally:
             self.session.close()
 
     def process_item(self, item, spider):
 
-        with self.session_scope():
+        with self.session_scope(item):
             release = self.create_release(item)
 
             for tag_name in item["tag_list"]:
@@ -330,7 +351,13 @@ class SavingItemToDB:
 
     def create_release(self, item):
 
-        logger.info(f"data to insert: {item}")
+        # logger.info(f"data to insert: {item}")
+
+        # scrapy fill images field if image exists and is uploaded on s3, otherwise images is an empty list
+        if not item["images"]:
+            image_url = "no_image"
+        else:
+            image_url = item["images"][0]["path"].split("/")[1]
 
         release_format = item["format"]
 
@@ -352,7 +379,7 @@ class SavingItemToDB:
             "published_date": item["published_date"],
             "comment_number": item["comment_number"],
             "release_nodata_url": item["release_url"],
-            "image_name": item["images"][0]["path"].split("/")[1],
+            "image_name": image_url,
             "format": release_format_id,
         }
 
