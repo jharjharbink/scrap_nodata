@@ -39,51 +39,69 @@ class PostProcessingPipeline:
             if 'artist_name_release_name_released_year' in item:
                 artist_name, release_name, released_year = self.extract_artist_release_and_year(
                     item['artist_name_release_name_released_year'])
+            else:
+                artist_name = ""
+                release_name = ""
+                released_year = 1000
+
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to extract artist_name, release_name and released_year for item: {item.items()}")
-            artist_name = None
-            release_name = None
-            released_year = None
+            artist_name = ""
+            release_name = ""
+            released_year = 1000
 
         # Format published_date from 'Sep 08, 2023 ·' to Date(08/09/2023)
         try:
             if 'published_date' in item:
                 published_date = self.extract_published_year(item["published_date"])
+            else:
+                published_date = None  # remplacer par Date(00/00/1000)
 
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to parse published_date for item: {item.items()}")
-            published_date = None
+            published_date = None  # remplacer par Date(00/00/1000)
 
         try:
             if 'tag_list' in item:
                 tag_list, release_type = self.remove_format_from_tags(item['tag_list'])
+            else:
+                tag_list = []
+                release_type = "unknown"
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to parse tag_list for item: {item.items()}")
-            tag_list = None
-            release_type = None
+            tag_list = []
+            release_type = "unknown"
 
         # Format comment_number from 'No comments' to 0
         try:
             if 'comment_number' in item:
                 comment_number = self.extract_comment_number(item['comment_number'][0])
+            else:
+                comment_number = -1
 
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to parse comment_number for item: {item.items()}")
-            comment_number = None
+            comment_number = -1
 
         try:
             if 'all_songs' in item:
-                all_songs_and_length = self.extract_songs_and_length(item['all_songs'])
-        except KeyError:
-            logger.info(f"all_songs unavailable for this item: {item.items()}")
+                all_songs_and_length = self.extract_songs_and_length(item['all_songs'], comment_number)
+            else:
+                all_songs_and_length = []
+
+        except (KeyError, ValueError) as exc:
+            logger.info(f"{exc}\nall_songs unavailable for this item: {item.items()}")
             all_songs_and_length = []
 
         try:
             if 'label_name' in item:
                 label_name = self.filter_label(item['label_name'])
-        except KeyError:
-            logger.info(f"label_name unavailable for this item: {item.items()}")
-            label_name = None
+            else:
+                label_name = ""
+
+        except KeyError as exc:
+            logger.info(f"{exc}\nlabel_name unavailable for this item: {item.items()}")
+            label_name = ""
 
         return ReleaseItem(
             artist_name=artist_name,
@@ -125,7 +143,7 @@ class PostProcessingPipeline:
         all_text_elements_cleaned = all_text_elements.strip().replace('\xa0', ' ').replace('\u200e', ' ')
 
         # Extract artist_name and release_name from all_text_elements
-        artist_release = all_text_elements_cleaned.split(' [')[0]
+        artist_release = all_text_elements_cleaned.rsplit(' [', 1)[0]
 
         if ' / ' in artist_release and ' – ' in artist_release:
             if artist_release.count(' / ') > 1 and artist_release.count(' – ') == 1:
@@ -211,14 +229,36 @@ class PostProcessingPipeline:
             return "unknown"
 
     @staticmethod
-    def extract_songs_and_length(all_songs_raw):
-        all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ') for song in all_songs_raw if song.strip()]
+    def extract_songs_and_length(all_songs_raw, comment_number):
 
+        if comment_number > -1:
+            del all_songs_raw[-comment_number:]
+        else:
+            raise ValueError
+
+        # removing <li> and </li>
+        all_songs_without_html_li_tag = [song[4:-5] for song in all_songs_raw]
+
+        # some character replacement
+        all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ').replace("&amp;", "&")
+                             for song in all_songs_without_html_li_tag if song.strip()]
+
+        # build list of tuples containing song name and length. such as [(song_name, song_length), ...]
         all_songs_and_length_raw = [song.rsplit(" ", 1) for song in all_songs_striped]
         all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
 
-        all_songs_and_length_cleaned = []
+        # in some case, song name is encapsulate in several strong tags. Here, removing theme
+        all_songs_and_length_untaged = []
         for song in all_songs_and_length:
+            if song[0].startswith("<strong>"):
+                all_songs_and_length_untaged.append((song[0].replace("<strong>", "").replace("</strong>", ""), song[1]))
+            else:
+                all_songs_and_length_untaged.append((song[0], song[1]))
+
+        # removing unwanted firsts characters
+        all_songs_and_length_cleaned = []
+        for song in all_songs_and_length_untaged:
+
             if song[0].startswith(" – "):
                 if len(song[0]) > 3:
                     all_songs_and_length_cleaned.append((song[0][3:], song[1]))
