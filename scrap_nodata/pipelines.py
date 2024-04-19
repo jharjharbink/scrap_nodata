@@ -122,23 +122,30 @@ class PostProcessingPipeline:
         the idea is to parse all of those string types to: "Daniel Avery", "Wonderland - Running", "2024"/None
         """
 
-        all_text_elements_cleaned = all_text_elements.strip().replace('\xa0', ' ')
+        all_text_elements_cleaned = all_text_elements.strip().replace('\xa0', ' ').replace('\u200e', ' ')
 
         # Extract artist_name and release_name from all_text_elements
         artist_release = all_text_elements_cleaned.split(' [')[0]
 
         if ' / ' in artist_release and ' – ' in artist_release:
-            if artist_release.find(' / ') < artist_release.find(' – '):
-                separator = ' / '
-            else:
+            if artist_release.count(' / ') > 1 and artist_release.count(' – ') == 1:
                 separator = ' – '
+
+            elif artist_release.count(' – ') > 1 and artist_release.count(' / ') == 1:
+                separator = ' / '
+
+            else:
+                if artist_release.find(' / ') < artist_release.find(' – '):
+                    separator = ' / '
+                else:
+                    separator = ' – '
         else:
             if ' / ' in artist_release:
                 separator = ' / '
             else:
                 separator = ' – '
 
-        artist_name, release_name = artist_release.split(separator)
+        artist_name, release_name = artist_release.rsplit(separator, 1)
 
         # Extract released_year from all_text_elements_cleaned
         if all_text_elements_cleaned[-7:-5] == ' [' and all_text_elements_cleaned[-1] == ']':
@@ -150,7 +157,7 @@ class PostProcessingPipeline:
 
     @staticmethod
     def extract_published_year(published_year_raw):
-        date_object_cleaned = published_year_raw.strip().replace('\xa0', ' ')
+        date_object_cleaned = published_year_raw.strip().replace('\xa0', ' ').replace('\u200e', ' ')
 
         date_object_cleaned = datetime.strptime(date_object_cleaned, '%b %d, %Y')
         date_object = date_object_cleaned.strftime('%d/%m/%Y')
@@ -205,20 +212,23 @@ class PostProcessingPipeline:
 
     @staticmethod
     def extract_songs_and_length(all_songs_raw):
-        all_songs_striped = [song.strip().replace('\xa0', ' ') for song in all_songs_raw if song.strip()]
+        all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ') for song in all_songs_raw if song.strip()]
 
-        all_songs_cleaned = []
-        for song in all_songs_striped:
-            if song.startswith(" – "):
-                all_songs_cleaned.append(song[3:])
-            if song.startswith("– "):
-                all_songs_cleaned.append(song[2:])
-            else:
-                all_songs_cleaned.append(song)
-
-        all_songs_and_length_raw = [song.rsplit(" ", 1) for song in all_songs_cleaned]
+        all_songs_and_length_raw = [song.rsplit(" ", 1) for song in all_songs_striped]
         all_songs_and_length = [(element[0], element[1][1:-1]) for element in all_songs_and_length_raw]
-        return all_songs_and_length
+
+        all_songs_and_length_cleaned = []
+        for song in all_songs_and_length:
+            if song[0].startswith(" – "):
+                if len(song[0]) > 3:
+                    all_songs_and_length_cleaned.append((song[0][3:], song[1]))
+            elif song[0].startswith("– "):
+                if len(song[0]) > 2:
+                    all_songs_and_length_cleaned.append((song[0][2:], song[1]))
+            else:
+                all_songs_and_length_cleaned.append((song[0], song[1]))
+
+        return all_songs_and_length_cleaned
 
     @staticmethod
     def filter_label(label_extracted_string):
@@ -268,8 +278,6 @@ class SavingItemToDB:
 
     def process_item(self, item, spider):
 
-
-
         with self.session_scope():
             release = self.create_release(item)
 
@@ -281,6 +289,8 @@ class SavingItemToDB:
                 self.create_song(song_and_length, release)
 
     def create_release(self, item):
+
+        logger.info(f"data to insert: {item}")
 
         release_format = item["format"]
 
@@ -334,6 +344,7 @@ class SavingItemToDB:
             song_length=song_name_and_length[1]
         )
         self.session.add(song)
+        return song
 
 
 
