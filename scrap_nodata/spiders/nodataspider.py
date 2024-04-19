@@ -19,8 +19,8 @@ class NodataspiderSpider(scrapy.Spider):
         # get all releases page's url on main page
         try:
             release_items = response.css('a.title::attr(href)').extract()
-        except Exception as ex:
-            logger.error(f"{ex}\nunable to catch releases urls. Current page: {response.request.url}")
+        except Exception as exc:
+            logger.error(f"{exc}\nunable to catch releases urls. Current page: {response.request.url}")
             release_items = list()
 
         for release_item in release_items:
@@ -29,22 +29,20 @@ class NodataspiderSpider(scrapy.Spider):
             try:
                 logger.info(f"reaching release page: {release_item}")
                 yield response.follow(release_item, callback=self.parse_release_page)
-            except Exception as ex:
-                logger.error(ex)
-                logger.error(f"unable to go to release url: {release_item}")
+            except Exception as exc:
+                logger.error(f"{exc}\nunable to go to release url: {release_item}")
 
         # Once we scraped all the album on page, we move to next main page
         try:
             next_page_url = response.css('li.last a::attr(href)').get()
             if next_page_url is not None:
                 yield response.follow(next_page_url, callback=self.parse)
-        except Exception as ex:
-            logger.error(f"{ex}\nunable to reach next page. Next page: {next_page_url}")
+        except Exception as exc:
+            logger.error(f"{exc}\nunable to reach next page. Next page: {next_page_url}")
 
 
     @staticmethod
     def parse_release_page(response):
-        logger.info(f"next page reached: {response.request.url}")
 
         sleep(1)
 
@@ -57,10 +55,10 @@ class NodataspiderSpider(scrapy.Spider):
             all_songs = response.css('ol li::text').extract()
             label_name = response.xpath('//span[@class="aligncenter"]/following::text()').get()
 
-            logger.info(f"data collected:\n- artist_name_release_name_released_year: "
-                        f"{artist_name_release_name_released_year}\n- published_date: {published_date}\n - tag_list: \n"
-                        f"{tag_list}\n - comment_number: {comment_number}\n- release_image_url: {release_image_url}\n- "
-                        f"all_songs: {all_songs}\n- label_name: {label_name}")
+            # logger.info(f"data collected:\n- artist_name_release_name_released_year: "
+            #             f"{artist_name_release_name_released_year}\n- published_date: {published_date}\n- tag_list: \n"
+            #             f"{tag_list}\n- comment_number: {comment_number}\n- release_image_url: {release_image_url}\n- "
+            #             f"all_songs: {all_songs}\n- label_name: {label_name}")
 
         except Exception as ex:
             logger.warning(f"{ex}\nunable to get data for page: {response.request.url}")
@@ -88,10 +86,9 @@ class NodataspiderSpider(scrapy.Spider):
 class DebugNodataspiderSpider(scrapy.Spider):
     name = "debug_nodataspider"
     allowed_domains = ["nodata.tv"]
-    start_urls = ["https://nodata.tv/192271"]
+    start_urls = ["https://nodata.tv/187569"]
 
     def parse(self, response):
-
 
         try:
             artist_name_release_name_released_year = response.css('div.page-heading h4::text').get()
@@ -128,3 +125,5 @@ class DebugNodataspiderSpider(scrapy.Spider):
             label_name=label_name,
             release_url=response.request.url
         )
+
+
