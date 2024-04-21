@@ -1,7 +1,8 @@
 making a new scraper for the website nodata.tv
 
 nodata.tv is a website that propose album to download severals times a week since 2008.
-In this project, I scrap the album metadata listed below in order to make a better search engine than the one on website and data-analysis:
+In this project, I scrap the album metadata listed below in order to make a better search engine than the one on website and data-analysis. I store those data in a postgresql database defined in database_schema.png, except for images which are stored in a AWS s3 bucket.
+
   - artist_name
   - release_name
   - release_creation_year
@@ -15,7 +16,6 @@ In this project, I scrap the album metadata listed below in order to make a bett
   - image_name (stored on Amazon s3)
   - format (EP, Album, Mixtape...)
 
-and store it in a postgresql database defined in database_schema.png
 
 To run this project locally, you'll have to :
   - create an anaconda environment containing all the dependencies specified in requirements.txt file
