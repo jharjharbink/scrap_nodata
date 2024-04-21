@@ -85,7 +85,7 @@ class NodataspiderSpider(scrapy.Spider):
 class DebugNodataspiderSpider(scrapy.Spider):
     name = "debug_nodataspider"
     allowed_domains = ["nodata.tv"]
-    start_urls = ["https://nodata.tv/146906"]
+    start_urls = ["https://nodata.tv/139067"]
 
     def parse(self, response):
 
