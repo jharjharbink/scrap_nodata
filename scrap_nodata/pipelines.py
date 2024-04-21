@@ -354,7 +354,11 @@ class CustomImagesPipeline(ImagesPipeline):
         if not item['image_urls']:
             return item
         else:
-            return super().process_item(item, spider)
+            try:
+                return super().process_item(item, spider)
+            except Exception as exc:
+                logger.info(f"problem downloading image for page: {item['release_url']}\n{exc}")
+                return item
 
 
 class SavingItemToDB:
