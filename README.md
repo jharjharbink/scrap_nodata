@@ -1,7 +1,7 @@
 making a new scraper for the website nodata.tv
 
 nodata.tv is a website that propose album to download severals times a week since 2008.
-In this project, I scrap the album metadata:
+In this project, I scrap the album metadata listed below in order to make a better search engine than the one on website and data-analysis:
   - artist_name
   - release_name
   - release_creation_year
@@ -15,17 +15,18 @@ In this project, I scrap the album metadata:
   - image_name (stored on Amazon s3)
   - format (EP, Album, Mixtape...)
 
-and store it in a postgresql database defined as below
+and store it in a postgresql database defined in database_schema.png
 
-To run this project you'll have to :
+To run this project locally, you'll have to :
   - create an anaconda environment containing all the dependencies specified in requirements.txt file
   - get a default settings.py file from scrapy project and add the lines specified bellow
   - create a s3 bucket on AWS
   - download postgresql and create a database
-  - run the script located at scrap_nodata/db/scripts/create_tables.py with your db_url specified just like the one set in settings.py
-  - run the command "scrapy crawl nodataspider"
+  - in your conda environement, run the script located at scrap_nodata/db/scripts/create_tables.py with your db_url specified just like the one set in settings.py
+  - in your conda environement, run the command "scrapy crawl nodataspider"
 
 [Lines to add in settings.py file]
+
 LOG_LEVEL = "ERROR"
 
 BOT_NAME = "scrap_nodata"
