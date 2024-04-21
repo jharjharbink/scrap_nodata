@@ -9,6 +9,7 @@
 from datetime import datetime
 from contextlib import contextmanager
 
+from scrapy.pipelines.images import ImagesPipeline
 from sqlalchemy.orm import Session
 
 from scrap_nodata.db.tables import Tag, Release, Song
@@ -75,9 +76,12 @@ class PostProcessingPipeline:
         # Format comment_number from 'No comments' to 0
         try:
             if 'comment_number' in item:
-                comment_number = self.extract_comment_number(item['comment_number'][0])
+                if item['comment_number']:
+                    comment_number = self.extract_comment_number(item['comment_number'][0])
+                else:
+                    comment_number = 0
             else:
-                comment_number = -1
+                comment_number = 0
 
         except Exception as exc:
             logger.warning(f"{exc}\nUnable to parse comment_number for item: {item.items()}")
@@ -85,7 +89,6 @@ class PostProcessingPipeline:
 
         try:
             if 'all_songs' in item:
-
                 all_songs_and_length = self.extract_songs_and_length(item['all_songs'], comment_number)
             else:
                 all_songs_and_length = []
@@ -104,7 +107,7 @@ class PostProcessingPipeline:
             logger.info(f"{exc}\nlabel_name unavailable for this item: {item.items()}")
             label_name = ""
 
-        return ReleaseItem(
+        release_item = ReleaseItem(
             artist_name=artist_name,
             release_name=release_name,
             released_year=released_year,
@@ -116,6 +119,10 @@ class PostProcessingPipeline:
             all_songs_and_length=all_songs_and_length,
             label_name=label_name,
             release_url=item['release_url'])
+
+        logger.info(f"release_item: {release_item}")
+
+        return release_item
 
     def remove_format_from_tags(self, tags):
 
@@ -144,12 +151,17 @@ class PostProcessingPipeline:
         the idea is to parse all of those string types to: "Daniel Avery", "Wonderland - Running", "2024"/None
         """
 
+        # clean string
         all_text_elements_cleaned = (all_text_elements.strip().replace('\xa0', ' ')
                                      .replace('\u200e', ' ').replace("&amp;", "&"))
 
-        # Extract artist_name and release_name from all_text_elements
-        artist_release = all_text_elements_cleaned.rsplit(' [', 1)[0]
+        # remove released year from string
+        if all_text_elements_cleaned[-7:-5] == ' [':
+            artist_release = all_text_elements_cleaned.rsplit(' [', 1)[0]
+        else:
+            artist_release = all_text_elements_cleaned
 
+        # Extract artist_name and release_name from all_text_elements
         if ' / ' in artist_release and ' – ' in artist_release:
             if artist_release.count(' / ') > 1 and artist_release.count(' – ') == 1:
                 separator = ' – '
@@ -162,20 +174,38 @@ class PostProcessingPipeline:
                     separator = ' / '
                 else:
                     separator = ' – '
+        elif ' / ' in artist_release and ' – ' not in artist_release:
+            separator = ' / '
+        elif ' / ' not in artist_release and ' – ' in artist_release:
+            separator = ' – '
+        elif ' / ' not in artist_release and ' – ' not in artist_release and ": " in artist_release:
+            separator = ": "
         else:
-            if ' / ' in artist_release:
-                separator = ' / '
+            separator = None
+
+        if separator:
+            artist_name, release_name = artist_release.rsplit(separator, 1)
+            artist_name = artist_name.strip()
+            release_name = release_name.strip()
+
+            # Extract released_year from all_text_elements_cleaned
+            if all_text_elements_cleaned[-7:-5] == ' [' and all_text_elements_cleaned[-1] == ']':
+                if all_text_elements_cleaned[-5:-1].isnumeric():
+                    released_year = int(all_text_elements_cleaned[-5:-1])
+                else:
+                    released_year = 1000
             else:
-                separator = ' – '
+                released_year = 1000
 
-        artist_name, release_name = artist_release.rsplit(separator, 1)
-        artist_name = artist_name.strip()
-        release_name = release_name.strip()
-
-        # Extract released_year from all_text_elements_cleaned
-        if all_text_elements_cleaned[-7:-5] == ' [' and all_text_elements_cleaned[-1] == ']':
-            released_year = int(all_text_elements_cleaned[-5:-1])
+        # if no separators have been found, we set default values
         else:
+            if isinstance(artist_release, str):
+                artist_release_striped = artist_release.strip()
+                artist_name = artist_release_striped
+                release_name = artist_release_striped
+            else:
+                artist_name = ""
+                release_name = ""
             released_year = 1000
 
         return artist_name, release_name, released_year
@@ -244,62 +274,87 @@ class PostProcessingPipeline:
         elif comment_number == 0:
             pass
         else:
-            raise ValueError
+            raise ValueError  # find somthing else
 
-        # removing <li> and </li>
-        all_songs_without_html_li_tag = [song[4:-5] for song in all_songs_raw]
+        if len(all_songs_raw) > 0:
 
-        # some character replacement
-        all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ').replace("&amp;", "&")
-                             .replace("<strong>", "").replace("</strong>", "")
-                             for song in all_songs_without_html_li_tag if song.strip()]
+            # removing <li> and </li>
+            all_songs_without_html_li_tag = [song[4:-5] for song in all_songs_raw]
 
-        # build list of tuples containing song name and length. such as [(song_name, song_length), ...]
-        all_songs_and_length = []
-        for song in all_songs_striped:
-            if song.endswith(")") and song[-7] == "(":
-                if " " in song:
-                    song_and_length = song.rsplit(" ", 1)
-                    all_songs_and_length.append((song_and_length[0], song_and_length[1][1:-1]))
+            # some character replacement
+            all_songs_striped = [song.strip().replace('\xa0', ' ').replace('\u200e', ' ').replace("&amp;", "&")
+                                 .replace("<strong>", "").replace("</strong>", "")
+                                 for song in all_songs_without_html_li_tag if song.strip()]
+
+            # build list of tuples containing song name and length. such as [(song_name, song_length), ...]
+            all_songs_and_length = []
+            for song in all_songs_striped:
+                if song.endswith(")"):
+                    if song[-7] == "(":
+                        if " " in song:
+                            song_and_length = song.rsplit(" ", 1)
+                            all_songs_and_length.append((song_and_length[0], song_and_length[1][1:-1]))
+                        else:
+                            all_songs_and_length.append((song, "unknown_duration"))
+                    elif song[-6] == "(":
+                        song_and_length = song.rsplit("(", 1)
+                        all_songs_and_length.append((song_and_length[0], song_and_length[1][:-1]))
+                    else:
+                        all_songs_and_length.append((song, "unknown_duration"))
                 else:
                     all_songs_and_length.append((song, "unknown_duration"))
-            else:
-                all_songs_and_length.append((song, "unknown_duration"))
 
-        # in some case, song name are encapsulate in strong tags. Here, removing theme
-        all_songs_and_length_untaged = []
-        for song in all_songs_and_length:
-            if song[0].startswith("<strong>"):
-                all_songs_and_length_untaged.append((song[0].replace("<strong>", "").replace("</strong>", ""), song[1]))
-            else:
-                all_songs_and_length_untaged.append((song[0], song[1]))
+            # in some case, song name are encapsulate in strong tags. Here, removing theme
+            all_songs_and_length_untaged = []
+            for song in all_songs_and_length:
+                if song[0].startswith("<strong>"):
+                    all_songs_and_length_untaged.append((song[0].replace("<strong>", "").replace("</strong>", ""), song[1]))
+                else:
+                    all_songs_and_length_untaged.append((song[0], song[1]))
 
-        # removing unwanted firsts characters
-        all_songs_and_length_cleaned = []
-        for song in all_songs_and_length_untaged:
+            # removing unwanted firsts characters
+            all_songs_and_length_cleaned = []
+            for song in all_songs_and_length_untaged:
 
-            if song[0].startswith(" – "):
-                if len(song[0]) > 3:
-                    all_songs_and_length_cleaned.append((song[0][3:], song[1]))
+                if song[0].startswith(" – "):
+                    if len(song[0]) > 3:
+                        all_songs_and_length_cleaned.append((song[0][3:], song[1]))
 
-            elif song[0].startswith("– "):
-                if len(song[0]) > 2:
-                    all_songs_and_length_cleaned.append((song[0][2:], song[1]))
+                elif song[0].startswith("– "):
+                    if len(song[0]) > 2:
+                        all_songs_and_length_cleaned.append((song[0][2:], song[1]))
 
-            else:
-                all_songs_and_length_cleaned.append((song[0], song[1]))
+                else:
+                    all_songs_and_length_cleaned.append((song[0], song[1]))
+
+        else:
+            all_songs_and_length_cleaned = []
 
         return all_songs_and_length_cleaned
 
     @staticmethod
     def filter_label(label_extracted_string):
+        label_extracted_string_striped = label_extracted_string.strip()
         start_marker = "[Label: "
         end_marker = " | "
 
-        start_index = label_extracted_string.find(start_marker) + len(start_marker)
-        end_index = label_extracted_string.find(end_marker)
+        start_index = label_extracted_string_striped.find(start_marker) + len(start_marker)
+        end_index = label_extracted_string_striped.find(end_marker)
 
-        return label_extracted_string[start_index:end_index]
+        return label_extracted_string_striped[start_index:end_index]
+
+
+class CustomImagesPipeline(ImagesPipeline):
+
+    def process_item(self, item, spider):
+
+        logger.info(item)
+
+        # if no image available, item["image_urls"] = [None]
+        if not item['image_urls']:
+            return item
+        else:
+            return super().process_item(item, spider)
 
 
 class SavingItemToDB:
@@ -354,10 +409,13 @@ class SavingItemToDB:
         # logger.info(f"data to insert: {item}")
 
         # scrapy fill images field if image exists and is uploaded on s3, otherwise images is an empty list
-        if not item["images"]:
-            image_url = "no_image"
+        if "images" in item:
+            if not item["images"]:
+                image_name = "no_image"
+            else:
+                image_name = item["images"][0]["path"].split("/")[1]
         else:
-            image_url = item["images"][0]["path"].split("/")[1]
+            image_name = "no_images"
 
         release_format = item["format"]
 
@@ -379,7 +437,7 @@ class SavingItemToDB:
             "published_date": item["published_date"],
             "comment_number": item["comment_number"],
             "release_nodata_url": item["release_url"],
-            "image_name": image_url,
+            "image_name": image_name,
             "format": release_format_id,
         }
 

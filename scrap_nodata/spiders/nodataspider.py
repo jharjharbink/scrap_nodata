@@ -1,7 +1,6 @@
 import scrapy
 from scrap_nodata.items import ScrapingItem
 
-
 from scrap_nodata.logger import logger
 
 from time import sleep
@@ -86,7 +85,7 @@ class NodataspiderSpider(scrapy.Spider):
 class DebugNodataspiderSpider(scrapy.Spider):
     name = "debug_nodataspider"
     allowed_domains = ["nodata.tv"]
-    start_urls = ["https://nodata.tv/154997"]
+    start_urls = ["https://nodata.tv/146906"]
 
     def parse(self, response):
 
